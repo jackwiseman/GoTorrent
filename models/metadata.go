@@ -22,8 +22,8 @@ type Metadata struct {
 	PieceLen int    `bencode:"piece length"`
 	Pieces   string `bencode:"pieces"`
 	// contains one of the following, where 'length' means there is one file, and 'files' means there are multiple, only single file downloads will be allowed for the moment
-	Length int            `bencode:"length"`
-	Files  []MetadataFile `bencode:"files"`
+	Length int            `bencode:"length,omitempty"`
+	Files  []MetadataFile `bencode:"files,omitempty"`
 }
 
 // MetadataFile is a subset of Metadata for use in bencoding, since a torrent can contain multiple files
@@ -71,8 +71,8 @@ func (torrent *Torrent) verifyMetadata() error {
 	hasher.Write(b.Bytes())
 	hash := hasher.Sum(nil)
 
-	log.Info().Msg(fmt.Sprintf("Computed hash: %s", string(hash)))
-	log.Info().Msg(fmt.Sprintf("Expected hash: %s", string(torrent.infoHash[:])))
+	log.Info().Msg(fmt.Sprintf("Computed hash: %x", hash))
+	log.Info().Msg(fmt.Sprintf("Expected hash: %x", torrent.infoHash[:]))
 
 	if !bytes.Equal(hash, torrent.infoHash[:]) {
 		return fmt.Errorf("metadata verification failed: hash mismatch")
