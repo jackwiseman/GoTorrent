@@ -42,6 +42,8 @@ func main() {
 		return
 	}
 
+	var torr *models.Torrent
+
 	if file != "" {
 		fmt.Println(len(os.Args))
 		if len(os.Args) < 3 {
@@ -49,10 +51,12 @@ func main() {
 			return
 		}
 
-		_, err := models.NewTorrentFile(os.Args[2])
+		torrentFile, err := models.NewTorrentFile(os.Args[2])
 		if err != nil {
 			panic(err)
 		}
+
+		torr = models.NewTorrentFromFile(torrentFile, connections)
 	}
 
 	if magnet != "" {
@@ -66,8 +70,8 @@ func main() {
 			panic(err)
 		}
 
-		torr := models.NewTorrent(magnetLink, connections)
-
-		torr.StartDownload()
+		torr = models.NewTorrentFromMagnet(magnetLink, connections)
 	}
+
+	torr.StartDownload()
 }

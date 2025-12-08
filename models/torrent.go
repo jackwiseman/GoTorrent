@@ -67,10 +67,9 @@ type MetadataPiece struct {
 	data       []byte
 }
 
-// for simplicity, only magnet links will be supportd for no
-func NewTorrent(magnet *Magnet, maxPeers int) *Torrent {
+func NewTorrentFromMagnet(magnet *Magnet, config Config) *Torrent {
 	var torrent Torrent
-	torrent.maxPeers = maxPeers
+	torrent.maxPeers = config.Connections
 
 	torrent.name = magnet.DisplayName
 	torrent.trackers = magnet.Trackers
@@ -82,6 +81,8 @@ func NewTorrent(magnet *Magnet, maxPeers int) *Torrent {
 
 	return &torrent
 }
+
+func NewTorrentFromFile(file *TorrentFile, config Config) *Torrent { return nil }
 
 func (torrent *Torrent) String() {
 	fmt.Println("Name: " + torrent.name)
