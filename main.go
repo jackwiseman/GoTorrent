@@ -49,7 +49,6 @@ func main() {
 	var torr *models.Torrent
 
 	if file != "" {
-		fmt.Println(len(os.Args))
 		if len(os.Args) < 3 {
 			fmt.Printf("Provide a file path\n")
 			return
@@ -59,9 +58,6 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-
-		fmt.Println(torrentFile.String())
-		torrentFile.PrintFileInfo()
 
 		torr = models.NewTorrentFromFile(torrentFile, config)
 	}

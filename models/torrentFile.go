@@ -31,8 +31,6 @@ type TorrentFile struct {
 
 // create a new torrent file given a file path
 func NewTorrentFile(file string) (*TorrentFile, error) {
-	fmt.Println(file)
-
 	// Read the entire file into memory
 	data, err := os.ReadFile(file)
 	if err != nil {
