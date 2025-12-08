@@ -23,7 +23,7 @@ type Torrent struct {
 	infoHash []byte // Sha1 hash with const size 20
 
 	trackers []*Tracker
-	peers    []Peer // all peers collected by the tracker, not necessarily connected
+	peers    []*Peer // all peers collected by the tracker, not necessarily connected
 	maxPeers int
 
 	// Metadata-specific
@@ -135,7 +135,8 @@ func (torrent *Torrent) String() {
 	if len(torrent.peers) == 0 {
 		fmt.Println(" -- None")
 	} else {
-		for _, peer := range torrent.peers {
+		for i := range torrent.peers {
+			peer := torrent.peers[i]
 			fmt.Println(" -- " + peer.ip)
 		}
 	}
@@ -166,12 +167,12 @@ func (torrent *Torrent) findPeers() {
 // remove all instances of repeating peer ip addresses from torrent.peers
 func (torrent *Torrent) removeDuplicatePeers() {
 	seen := map[string]bool{}
-	trimmed := []Peer{}
+	trimmed := []*Peer{}
 
-	for i := range torrent.peers {
-		if !seen[torrent.peers[i].ip] {
-			seen[torrent.peers[i].ip] = true
-			trimmed = append(trimmed, torrent.peers[i])
+	for _, peer := range torrent.peers {
+		if !seen[peer.ip] {
+			seen[peer.ip] = true
+			trimmed = append(trimmed, peer)
 		}
 	}
 	torrent.peers = trimmed

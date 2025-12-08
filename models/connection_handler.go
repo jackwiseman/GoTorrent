@@ -50,7 +50,7 @@ func (ch *ConnectionHandler) run() {
 				alivePeers++
 				continue
 			default:
-				ch.activeConns = append(ch.activeConns, &ch.torrent.peers[i])
+				ch.activeConns = append(ch.activeConns, ch.torrent.peers[i])
 				ch.torrent.peers[i].status = Alive
 				//				ch.logger.Printf(" + %s", ch.torrent.peers[i].String())
 				go ch.activeConns[len(ch.activeConns)-1].run(ch.doneChan)
