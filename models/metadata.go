@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"gotorrent/utils"
-	"math"
 	"math/rand"
 	"os"
 	"strconv"
@@ -37,39 +36,27 @@ func (md *Metadata) String() string {
 	return s
 }
 
-func (torrent *Torrent) numMetadataPieces() int {
-	return int(math.Ceil(float64(torrent.metadataSize) / float64(BlockLen)))
-}
-
-func (torrent *Torrent) hasAllMetadata() (bool, error) {
-	if torrent.numMetadataPieces() == 0 {
-		return false, nil
+func (metadata *Metadata) marshal() ([]byte, error) {
+	var b bytes.Buffer
+	err := bencode.Marshal(&b, metadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
 	}
-
-	for i := 0; i < torrent.numMetadataPieces(); i++ {
-		isSet, err := utils.BitIsSet(torrent.metadataPieces, i)
-		if err != nil {
-			return false, err
-		}
-
-		if !isSet {
-			return false, nil
-		}
-	}
-	return true, nil
+	return b.Bytes(), nil
 }
 
 func (torrent *Torrent) verifyMetadata() error {
 	// we reverse the bencode, and then hash the pieces, comparing with the infohash to ensure we have valid metadata in the struct
-	var b bytes.Buffer
-	err := bencode.Marshal(&b, torrent.metadata)
+	b, err := torrent.metadata.marshal()
 	if err != nil {
-		return fmt.Errorf("failed to marshal metadata: %w", err)
+		return err
 	}
 
 	hasher := sha1.New()
-	hasher.Write(b.Bytes())
+	hasher.Write(b)
 	hash := hasher.Sum(nil)
+
+	log.Info().Msg(fmt.Sprintf("Metadata struct reports metadata length of %d bytes", len(b)))
 
 	log.Info().Msg(fmt.Sprintf("Computed hash: %x", hash))
 	log.Info().Msg(fmt.Sprintf("Expected hash: %x", torrent.infoHash[:]))

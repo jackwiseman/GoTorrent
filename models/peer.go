@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 // Identifiers for peer status to denote whether we should attempt to connect to them again or not
@@ -215,6 +217,7 @@ func (peer *Peer) performHandshake() error {
 		peer.maxRequests = result.Requests
 
 		if result.MetadataSize != 0 && peer.torrent.metadataSize == 0 { // make sure they attached metadata size, also no reason to overwrite if we already set
+			log.Info().Msgf("Peer %s reports metadata size of %d bytes", peer.ip, result.MetadataSize)
 			peer.torrent.metadataSize = result.MetadataSize
 			peer.torrent.metadataRaw = make([]byte, result.MetadataSize)
 			peer.torrent.metadataPieces = make([]byte, (peer.torrent.numMetadataPieces()+7)/8)

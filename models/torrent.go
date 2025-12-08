@@ -113,6 +113,9 @@ func NewTorrentFromFile(file *TorrentFile, config *Config) *Torrent {
 
 	torrent.metadata = metadata
 
+	torrent.verifyMetadata()
+	torrent.hasAllMetadata()
+
 	torrent.connHandler = newConnHandler(&torrent)
 
 	torrent.torrentBlockCH = make(chan TorrentBlock)
@@ -448,4 +451,28 @@ func (torrent *Torrent) GetTrackers() []string {
 		trackers[i] = tracker.link.String()
 	}
 	return trackers
+}
+
+// return the number of pieces in the metadata
+func (torrent *Torrent) numMetadataPieces() int {
+	return int(math.Ceil(float64(torrent.metadataSize) / float64(BlockLen)))
+}
+
+func (torrent *Torrent) hasAllMetadata() (bool, error) {
+	if torrent.numMetadataPieces() == 0 {
+		return false, nil
+	}
+
+	log.Info().Msg(fmt.Sprintf("Expecting %d metadata pieces", torrent.numMetadataPieces()))
+	for i := 0; i < torrent.numMetadataPieces(); i++ {
+		isSet, err := utils.BitIsSet(torrent.metadataPieces, i)
+		if err != nil {
+			return false, err
+		}
+
+		if !isSet {
+			return false, nil
+		}
+	}
+	return true, nil
 }
