@@ -25,6 +25,7 @@ type Torrent struct {
 	trackers []*Tracker
 	peers    []*Peer // all peers collected by the tracker, not necessarily connected
 	maxPeers int
+	peersMx  sync.Mutex // to ensure thread-safe access to peers slice
 
 	// Metadata-specific
 	metadataSize int // in bytes, given by first extended handshake
@@ -221,8 +222,13 @@ func (torrent *Torrent) parseMetadataFile() error {
 
 // "main" function of a torrent
 func (torrent *Torrent) StartDownload() {
-	// get num_want peers and store in masterlist of peers
-	torrent.findPeers()
+	// start announce process
+	var wg sync.WaitGroup
+	for i := range torrent.trackers {
+		wg.Add(1)
+		go torrent.announceHandler(torrent.trackers[i], &wg)
+	}
+	wg.Wait()
 
 	// prepare listeners
 	go torrent.metadataPieceHandler()
@@ -281,6 +287,35 @@ func (torrent *Torrent) torrentBlockHandler() {
 		// Update progress bar
 		torrent.progressBar.play(int64(torrent.numPiecesDownloaded))
 	}
+}
+
+func (torrent *Torrent) announceHandler(tracker *Tracker, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	log.Info().Msg(fmt.Sprintf("Announcing to tracker %s", tracker.link.String()))
+
+	err := tracker.connect()
+	if err != nil {
+		return
+	}
+
+	defer tracker.disconnect()
+
+	// obtain a connection id
+	err = tracker.setConnectionID()
+	if err != nil {
+		log.Error().Msg(fmt.Sprintf("Error setting connection ID for tracker %s: %s", tracker.link.String(), err.Error()))
+		return
+	}
+
+	// send announce request
+	_, err = tracker.announce(torrent)
+	if err != nil {
+		log.Error().Msg(fmt.Sprintf("Error announcing to tracker %s: %s", tracker.link.String(), err.Error()))
+		return
+	}
+
+	return
 }
 
 func (torrent *Torrent) metadataPieceHandler() {

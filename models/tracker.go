@@ -8,7 +8,6 @@ import (
 	"math"
 	"net"
 	"net/url"
-	"strconv"
 	"sync"
 	"time"
 
@@ -46,12 +45,7 @@ func (tracker *Tracker) FindPeers(torrent *Torrent, wg *sync.WaitGroup) {
 		return
 	}
 
-	seeders, err := tracker.announce(torrent, 0)
-	if err != nil {
-		return
-	}
-
-	numSeeders, err := tracker.announce(torrent, seeders)
+	numSeeders, err := tracker.announce(torrent)
 	if err != nil {
 		return
 	}
@@ -162,7 +156,7 @@ func (tracker *Tracker) setConnectionID() error {
 
 // announce to a tracker requesting num_peers ip addresses
 // returns # of seeders
-func (tracker *Tracker) announce(torrent *Torrent, numWant int) (int, error) {
+func (tracker *Tracker) announce(torrent *Torrent) (int, error) {
 	for i := 0; i <= tracker.retries; i++ {
 		transactionID, err := utils.GetTransactionID()
 		if err != nil {
@@ -195,7 +189,7 @@ func (tracker *Tracker) announce(torrent *Torrent, numWant int) (int, error) {
 		// key
 		binary.BigEndian.PutUint32(packet[88:], 0)
 		// num_want
-		binary.BigEndian.PutUint32(packet[92:], uint32(numWant))
+		binary.BigEndian.PutUint32(packet[92:], 0xFFFFFFFF) // by default, set to -1
 		// port
 		binary.BigEndian.PutUint16(packet[96:], 6881)
 
@@ -207,32 +201,48 @@ func (tracker *Tracker) announce(torrent *Torrent, numWant int) (int, error) {
 			return 0, errors.New("could not write announce request")
 		}
 
-		buf := make([]byte, 20+(6*numWant))
+		buf := make([]byte, 4096)                                                                                        // should be plenty for most responses
 		err = tracker.conn.SetReadDeadline(time.Now().Add(time.Second * time.Duration(int(15*math.Pow(2, float64(i)))))) // BEP 15 - If a response is not received after 15 * 2 ^ n seconds, the client should retransmit the request, where n starts at 0 and is increased up to 8 (3840 seconds) after every retransmission
 		if err != nil {
 			panic(err)
 		}
 
 		bytesRead, err := tracker.conn.Read(buf)
-		if bytesRead < 20 || err != nil {
+		if err != nil {
+			return 0, err
+		}
+
+		if bytesRead < 20 {
 			if i >= tracker.retries {
 				return 0, err
 			}
 			continue
 		}
 
-		seeders := int(binary.BigEndian.Uint32(buf[16:]))
-		for j := 0; j < int(math.Min(float64(numWant), float64(seeders))); j++ {
-			ipAddressRaw := binary.BigEndian.Uint32(buf[20+(6*j):])
-			port := binary.BigEndian.Uint16(buf[24+(6*j):])
+		buf = buf[:bytesRead]
 
-			// convert ipAddress into a string representation
-			ipAddress := make(net.IP, 4)
-			binary.BigEndian.PutUint32(ipAddress, ipAddressRaw)
+		ar, err := UnmarshalAnnounceResponse(buf)
+		log.Info().Msg(fmt.Sprintf("We got %d seeders from this tracker", int(ar.Seeders)))
 
-			torrent.peers = append(torrent.peers, newPeer(ipAddress.String(), strconv.Itoa(int(port)), torrent))
+		for _, peer := range ar.Peers {
+			torrent.peersMx.Lock()
+			torrent.peers = append(torrent.peers, newPeer(peer.IP.String(), fmt.Sprintf("%d", peer.Port), torrent))
+			torrent.peersMx.Unlock()
 		}
-		return seeders, nil
+
+		return int(ar.Seeders), nil
+		// seeders := int(binary.BigEndian.Uint32(buf[16:]))
+		// for j := 0; j < int(math.Min(float64(numWant), float64(seeders))); j++ {
+		// 	ipAddressRaw := binary.BigEndian.Uint32(buf[20+(6*j):])
+		// 	port := binary.BigEndian.Uint16(buf[24+(6*j):])
+		//
+		// 	// convert ipAddress into a string representation
+		// 	ipAddress := make(net.IP, 4)
+		// 	binary.BigEndian.PutUint32(ipAddress, ipAddressRaw)
+		//
+		// 	torrent.peers = append(torrent.peers, newPeer(ipAddress.String(), strconv.Itoa(int(port)), torrent))
+		// }
+		// return seeders, nil
 	}
 	return 0, errors.New("tracker timed out")
 }
