@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/rs/zerolog/pkgerrors"
 )
 
@@ -59,6 +60,7 @@ func main() {
 			panic(err)
 		}
 
+		log.Info().Msgf("Torrent file loaded: %s", torrentFile.Info.Name)
 		torr = models.NewTorrentFromFile(torrentFile, config)
 	}
 
@@ -83,5 +85,6 @@ func main() {
 
 	if download {
 		torr.StartDownload()
+
 	}
 }

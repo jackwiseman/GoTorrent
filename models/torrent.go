@@ -87,8 +87,11 @@ func NewTorrentFromFile(file *TorrentFile, config *Config) *Torrent {
 	var torrent Torrent
 	torrent.maxPeers = config.Connections
 
-	torrent.name = file.Info.Name
+	torrent.infoHash = file.GetInfoHash()
 
+	torrent.name = file.Comment
+
+	// add trackers from file
 	trackers := make([]*Tracker, 0, len(file.AnnounceList))
 	for _, tracker := range file.AnnounceList {
 		// convert string to url
@@ -100,6 +103,15 @@ func NewTorrentFromFile(file *TorrentFile, config *Config) *Torrent {
 		trackers = append(trackers, NewTracker(*u))
 	}
 	torrent.trackers = trackers
+
+	// add metadata from file
+	metadata := Metadata{}
+	metadata.Name = file.Info.Name
+	metadata.PieceLen = file.Info.PieceLength
+	metadata.Pieces = file.Info.Pieces
+	metadata.Length = file.Info.Length
+
+	torrent.metadata = metadata
 
 	torrent.connHandler = newConnHandler(&torrent)
 
@@ -169,7 +181,7 @@ func (torrent *Torrent) parseMetadataFile() error {
 		return err
 	}
 
-	var result = Metadata{"", "", 0, "", 0, nil}
+	var result = Metadata{"", 0, "", 0, nil}
 	reader := bytes.NewReader(data)
 	err = bencode.Unmarshal(reader, &result)
 	if err != nil {
@@ -305,6 +317,10 @@ func (torrent *Torrent) metadataPieceHandler() {
 
 		torrent.buildMetadataFile()
 		torrent.parseMetadataFile()
+		err = torrent.verifyMetadata()
+		if err != nil {
+			panic(err)
+		}
 		torrent.hasMetadata = true
 	}
 }

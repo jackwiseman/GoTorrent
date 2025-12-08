@@ -56,12 +56,12 @@ func NewTorrentFile(file string) (*TorrentFile, error) {
 	return tf, nil
 }
 
-func (tf *TorrentFile) GetInfoHash() string {
+func (tf *TorrentFile) GetInfoHash() []byte {
 	// the info hash is the SHA1 hash of the bencoded info dictionary
 	// Find the "info" key in the bencode data
 	index := strings.Index(tf.Data, "4:info")
 	if index == -1 {
-		return ""
+		return nil
 	}
 
 	// Move past "4:info" to the start of the info dictionary
@@ -70,7 +70,7 @@ func (tf *TorrentFile) GetInfoHash() string {
 	// Parse through the bencode to find where the dictionary ends
 	end := findBencodeEnd(tf.Data, start)
 	if end == -1 {
-		return ""
+		return nil
 	}
 
 	// Extract just the info dictionary
@@ -81,7 +81,7 @@ func (tf *TorrentFile) GetInfoHash() string {
 	hasher.Write([]byte(infoDict))
 	hash := hasher.Sum(nil)
 
-	return fmt.Sprintf("%x", hash)
+	return hash
 }
 
 // findBencodeEnd finds the end position of a bencode value starting at pos
@@ -134,7 +134,6 @@ func findBencodeEnd(data string, pos int) int {
 
 func (tf *TorrentFile) String() string {
 	return fmt.Sprintf("TorrentFile(Name: %s\nAnnounce: %s\nAnnounceList: %d trackers\n, Comment: %s\nCreated By: %s\nCreation Date: %s\nLength: %d\nPieceLength: %d\n", tf.Info.Name, tf.Announce, len(tf.AnnounceList), tf.Comment, tf.CreatedBy, fmt.Sprint(tf.CreationDate), tf.Info.Length, tf.Info.PieceLength)
-	return fmt.Sprintf("a")
 }
 
 func (tf *TorrentFile) PrintFileInfo() {

@@ -1,6 +1,8 @@
 package models
 
 import (
+	"bytes"
+	"crypto/sha1"
 	"errors"
 	"fmt"
 	"gotorrent/utils"
@@ -8,12 +10,15 @@ import (
 	"math/rand"
 	"os"
 	"strconv"
+
+	"github.com/jackpal/bencode-go"
+	"github.com/rs/zerolog/log"
 )
 
-// Metadata stores the torrent's metadata, since we don't deal with .torrent files
+// Metadata stores the torrent's metadata
+// This is the same as the info dictionary in the metainfo file (.torrent file)
 type Metadata struct {
 	Name     string `bencode:"name"`
-	NameUtf  string `bencode:"name.utf-8"`
 	PieceLen int    `bencode:"piece length"`
 	Pieces   string `bencode:"pieces"`
 	// contains one of the following, where 'length' means there is one file, and 'files' means there are multiple, only single file downloads will be allowed for the moment
@@ -52,6 +57,27 @@ func (torrent *Torrent) hasAllMetadata() (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+func (torrent *Torrent) verifyMetadata() error {
+	// we reverse the bencode, and then hash the pieces, comparing with the infohash to ensure we have valid metadata in the struct
+	var b bytes.Buffer
+	err := bencode.Marshal(&b, torrent.metadata)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	hasher := sha1.New()
+	hasher.Write(b.Bytes())
+	hash := hasher.Sum(nil)
+
+	log.Info().Msg(fmt.Sprintf("Computed hash: %s", string(hash)))
+	log.Info().Msg(fmt.Sprintf("Expected hash: %s", string(torrent.infoHash[:])))
+
+	if !bytes.Equal(hash, torrent.infoHash[:]) {
+		return fmt.Errorf("metadata verification failed: hash mismatch")
+	}
+	return nil
 }
 
 func (torrent *Torrent) getRandMetadataPiece() (int, error) {
