@@ -11,10 +11,11 @@ import (
 )
 
 type TorrentFile struct {
-	Announce     string `bencode:"announce"`
-	Comment      string `bencode:"comment,omitempty"`
-	CreatedBy    string `bencode:"created by,omitempty"`
-	CreationDate int    `bencode:"creation date,omitempty"`
+	Announce     string     `bencode:"announce"`
+	AnnounceList [][]string `bencode:"announce-list,omitempty"` // list of announce URLs
+	Comment      string     `bencode:"comment,omitempty"`
+	CreatedBy    string     `bencode:"created by,omitempty"`
+	CreationDate int        `bencode:"creation date,omitempty"`
 	Info         struct {
 		Length      int    `bencode:"length"`
 		Name        string `bencode:"name"`         // suggested file name
@@ -48,8 +49,11 @@ func NewTorrentFile(file string) (*TorrentFile, error) {
 		return nil, fmt.Errorf("failed to unmarshal torrent file: %w", err)
 	}
 
-	// fmt.Println(tf.Data)
-	fmt.Println(tf.GetInfoHash())
+	// Ensure this is a single-file torrent
+	// TODO: add support for multi-file torrents
+	if len(tf.Info.Files) > 0 {
+		return nil, fmt.Errorf("multi-file torrents are not supported yet")
+	}
 
 	return tf, nil
 }
@@ -131,7 +135,8 @@ func findBencodeEnd(data string, pos int) int {
 }
 
 func (tf *TorrentFile) String() string {
-	return fmt.Sprintf("TorrentFile(Name: %s\nAnnounce: %s\nComment: %s\nCreated By: %s\nCreation Date: %s\nLength: %d\nPieceLength: %d\n", tf.Info.Name, tf.Announce, tf.Comment, tf.CreatedBy, fmt.Sprint(tf.CreationDate), tf.Info.Length, tf.Info.PieceLength)
+	return fmt.Sprintf("TorrentFile(Name: %s\nAnnounce: %s\nAnnounceList: %d trackers\n, Comment: %s\nCreated By: %s\nCreation Date: %s\nLength: %d\nPieceLength: %d\n", tf.Info.Name, tf.Announce, len(tf.AnnounceList), tf.Comment, tf.CreatedBy, fmt.Sprint(tf.CreationDate), tf.Info.Length, tf.Info.PieceLength)
+	return fmt.Sprintf("a")
 }
 
 func (tf *TorrentFile) PrintFileInfo() {

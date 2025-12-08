@@ -80,6 +80,11 @@ func main() {
 		torr = models.NewTorrentFromMagnet(magnetLink, *config)
 	}
 
+	if len(torr.GetTrackers()) == 0 {
+		fmt.Println("No trackers found in the torrent file or magnet link, DHT is not currently supported, exiting.")
+		return
+	}
+
 	if download {
 		torr.StartDownload()
 	}

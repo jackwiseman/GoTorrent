@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"fmt"
+	"net/url"
 
 	"gotorrent/utils"
 	"math"
@@ -87,7 +88,18 @@ func NewTorrentFromFile(file *TorrentFile, config *Config) *Torrent {
 	torrent.maxPeers = config.Connections
 
 	torrent.name = file.Info.Name
-	// torrent.trackers = magnet.Trackers
+
+	trackers := make([]*Tracker, 0, len(file.AnnounceList))
+	for _, tracker := range file.AnnounceList {
+		// convert string to url
+		u, err := url.Parse(tracker[0])
+		if err != nil {
+			panic(err)
+		}
+
+		trackers = append(trackers, NewTracker(*u))
+	}
+	torrent.trackers = trackers
 
 	torrent.connHandler = newConnHandler(&torrent)
 
@@ -412,4 +424,12 @@ func (torrent *Torrent) createFile(offset int, fileSize int, path string, name s
 			_, _ = file.Write(torrent.pieces[i].blocks[j].data)
 		}
 	}
+}
+
+func (torrent *Torrent) GetTrackers() []string {
+	trackers := make([]string, len(torrent.trackers))
+	for i, tracker := range torrent.trackers {
+		trackers[i] = tracker.link.String()
+	}
+	return trackers
 }
