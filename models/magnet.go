@@ -60,9 +60,5 @@ func NewMagnet(linkRaw string) (*Magnet, error) {
 		ml.Trackers = append(ml.Trackers, NewTracker(*url))
 	}
 
-	for _, t := range ml.Trackers {
-		fmt.Println(t)
-	}
-
 	return &ml, nil
 }
