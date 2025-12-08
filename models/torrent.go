@@ -82,7 +82,7 @@ func NewTorrentFromMagnet(magnet *Magnet, config Config) *Torrent {
 	return &torrent
 }
 
-func NewTorrentFromFile(file *TorrentFile, config Config) *Torrent { return nil }
+func NewTorrentFromFile(file *TorrentFile, config *Config) *Torrent { return nil }
 
 func (torrent *Torrent) String() {
 	fmt.Println("Name: " + torrent.name)

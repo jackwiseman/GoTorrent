@@ -32,6 +32,8 @@ func main() {
 	}
 	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
 
+	config := models.NewConfig(connections)
+
 	if magnet != "" && file != "" {
 		fmt.Println("Please provide either a file or a magnet link, not both.")
 		return
@@ -56,7 +58,7 @@ func main() {
 			panic(err)
 		}
 
-		torr = models.NewTorrentFromFile(torrentFile, connections)
+		torr = models.NewTorrentFromFile(torrentFile, config)
 	}
 
 	if magnet != "" {
@@ -70,7 +72,7 @@ func main() {
 			panic(err)
 		}
 
-		torr = models.NewTorrentFromMagnet(magnetLink, connections)
+		torr = models.NewTorrentFromMagnet(magnetLink, *config)
 	}
 
 	torr.StartDownload()
