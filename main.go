@@ -15,9 +15,11 @@ var connections int
 var debug bool
 var file string
 var magnet string
+var download bool
 
 func init() {
 	// flag.BoolVar(&seed, "seed", false, "continue seeding after download")
+	flag.BoolVar(&download, "download", false, "enable downloading")
 	flag.StringVar(&file, "file", "", "path to the .torrent file")
 	flag.StringVar(&magnet, "magnet", "", "magnet link to download")
 	flag.IntVar(&connections, "connections", 50, "number of connections to use")
@@ -58,6 +60,9 @@ func main() {
 			panic(err)
 		}
 
+		fmt.Println(torrentFile.String())
+		torrentFile.PrintFileInfo()
+
 		torr = models.NewTorrentFromFile(torrentFile, config)
 	}
 
@@ -75,5 +80,7 @@ func main() {
 		torr = models.NewTorrentFromMagnet(magnetLink, *config)
 	}
 
-	torr.StartDownload()
+	if download {
+		torr.StartDownload()
+	}
 }

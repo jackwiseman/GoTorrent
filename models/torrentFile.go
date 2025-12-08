@@ -17,9 +17,13 @@ type TorrentFile struct {
 	CreationDate int    `bencode:"creation date,omitempty"`
 	Info         struct {
 		Length      int    `bencode:"length"`
-		Name        string `bencode:"name"`
-		PieceLength int    `bencode:"piece length"`
-		Pieces      string `bencode:"pieces"` // this is a byte array of SHA1 hashes of the pieces
+		Name        string `bencode:"name"`         // suggested file name
+		PieceLength int    `bencode:"piece length"` // length of each piece in bytes (all are the same size except possibly the last)
+		Pieces      string `bencode:"pieces"`       // this is a byte array of SHA1 hashes of the pieces
+		Files       []struct {
+			Length int      `bencode:"length"`
+			Path   []string `bencode:"path"`
+		} `bencode:"files,omitempty"`
 	} `bencode:"info"`
 	Data string // raw bytes of the torrent file as a string
 }
@@ -123,5 +127,22 @@ func findBencodeEnd(data string, pos int) int {
 
 		// Skip past length, colon, and string data
 		return pos + colonPos + 1 + length
+	}
+}
+
+func (tf *TorrentFile) String() string {
+	return fmt.Sprintf("TorrentFile(Name: %s\nAnnounce: %s\nComment: %s\nCreated By: %s\nCreation Date: %s\nLength: %d\nPieceLength: %d\n", tf.Info.Name, tf.Announce, tf.Comment, tf.CreatedBy, fmt.Sprint(tf.CreationDate), tf.Info.Length, tf.Info.PieceLength)
+}
+
+func (tf *TorrentFile) PrintFileInfo() {
+	// if length is present and there is no key 'files', it's a single file torrent
+	if len(tf.Info.Files) == 0 {
+		fmt.Printf("Single file torrent: %s (%d bytes)\n", tf.Info.Name, tf.Info.Length)
+	} else {
+		fmt.Printf("Multi-file torrent: %s\n", tf.Info.Name)
+		for _, file := range tf.Info.Files {
+			path := strings.Join(file.Path, "/")
+			fmt.Printf(" - %s (%d bytes)\n", path, file.Length)
+		}
 	}
 }

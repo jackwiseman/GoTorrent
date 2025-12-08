@@ -82,7 +82,20 @@ func NewTorrentFromMagnet(magnet *Magnet, config Config) *Torrent {
 	return &torrent
 }
 
-func NewTorrentFromFile(file *TorrentFile, config *Config) *Torrent { return nil }
+func NewTorrentFromFile(file *TorrentFile, config *Config) *Torrent {
+	var torrent Torrent
+	torrent.maxPeers = config.Connections
+
+	torrent.name = file.Info.Name
+	// torrent.trackers = magnet.Trackers
+
+	torrent.connHandler = newConnHandler(&torrent)
+
+	torrent.torrentBlockCH = make(chan TorrentBlock)
+	torrent.metadataPieceCH = make(chan MetadataPiece)
+
+	return &torrent
+}
 
 func (torrent *Torrent) String() {
 	fmt.Println("Name: " + torrent.name)
