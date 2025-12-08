@@ -88,15 +88,15 @@ func (torrent *Torrent) String() {
 	fmt.Println("Name: " + torrent.name)
 	fmt.Println("Magnet: " + torrent.magLink)
 	fmt.Println("Trackers:")
-	for i := 0; i < len(torrent.trackers); i++ {
-		fmt.Println(" -- " + torrent.trackers[i].link.Host)
+	for _, tracker := range torrent.trackers {
+		fmt.Println(" -- " + tracker.link.Host)
 	}
 	fmt.Println("Known peers:")
 	if len(torrent.peers) == 0 {
 		fmt.Println(" -- None")
 	} else {
-		for i := 0; i < len(torrent.peers); i++ {
-			fmt.Println(" -- " + torrent.peers[i].ip)
+		for _, peer := range torrent.peers {
+			fmt.Println(" -- " + peer.ip)
 		}
 	}
 	if torrent.metadata.Length != 0 {
