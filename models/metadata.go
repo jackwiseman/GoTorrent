@@ -38,7 +38,7 @@ func (md *Metadata) String() string {
 
 func (metadata *Metadata) marshal() ([]byte, error) {
 	var b bytes.Buffer
-	err := bencode.Marshal(&b, metadata)
+	err := bencode.Marshal(&b, *metadata)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
 	}

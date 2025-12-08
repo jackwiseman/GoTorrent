@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"net/url"
+	"time"
 
 	"gotorrent/utils"
 	"math"
@@ -114,8 +115,15 @@ func NewTorrentFromFile(file *TorrentFile, config *Config) *Torrent {
 
 	torrent.metadata = metadata
 
-	torrent.verifyMetadata()
-	torrent.hasAllMetadata()
+	err := torrent.verifyMetadata()
+	if err != nil {
+		log.Error().Msg("metadata was not verified, exiting")
+		panic(err)
+	}
+	// torrent.hasAllMetadata()
+	torrent.hasMetadata = true
+
+	torrent.createPiecesSlice()
 
 	torrent.connHandler = newConnHandler(&torrent)
 
@@ -146,23 +154,6 @@ func (torrent *Torrent) String() {
 		fmt.Println("-------------")
 		fmt.Println(torrent.metadata.String())
 	}
-}
-
-// send 2x announce requests to all trackers, the first to find out how many peers they have,
-// the second to request that many, so that we have a large pool to pull from
-func (torrent *Torrent) findPeers() {
-	var wg sync.WaitGroup
-
-	log.Info().Msg(fmt.Sprintf("Contacting %d trackers...", len(torrent.trackers)))
-
-	for _, tracker := range torrent.trackers {
-		wg.Add(1)
-		go tracker.FindPeers(torrent, &wg)
-	}
-	wg.Wait()
-
-	torrent.removeDuplicatePeers()
-	fmt.Printf("%d peers in swarm\n", len(torrent.peers))
 }
 
 // remove all instances of repeating peer ip addresses from torrent.peers
@@ -204,6 +195,13 @@ func (torrent *Torrent) parseMetadataFile() error {
 	torrent.name = torrent.metadata.Name
 
 	// create empty pieces slice
+	// TODO: migrate
+	torrent.createPiecesSlice()
+
+	return nil
+}
+
+func (torrent *Torrent) createPiecesSlice() {
 	torrent.pieces = make([]Piece, int(math.Ceil(float64(torrent.metadata.Length)/float64(torrent.metadata.PieceLen))))
 	for i := 0; i < len(torrent.pieces); i++ {
 		torrent.pieces[i].blocks = make([]Block, torrent.getNumBlocksInPiece())
@@ -215,26 +213,23 @@ func (torrent *Torrent) parseMetadataFile() error {
 
 	torrent.pieceQueue = newPieceQueue(len(torrent.pieces), true)
 
+	// TODO: this is a hack to ensure that the progress bar is initialized correctly and needs to be placed somewhere else
 	torrent.progressBar.newOption(0, int64(len(torrent.pieces)))
-
-	return nil
 }
 
 // "main" function of a torrent
 func (torrent *Torrent) StartDownload() {
 	// start announce process
-	var wg sync.WaitGroup
 	for i := range torrent.trackers {
-		wg.Add(1)
-		go torrent.announceHandler(torrent.trackers[i], &wg)
+		go torrent.announceHandler(torrent.trackers[i])
 	}
-	wg.Wait()
 
 	// prepare listeners
 	go torrent.metadataPieceHandler()
 	go torrent.torrentBlockHandler()
 
 	// eventually this will be backgrounded but ok to just connect for now
+	log.Info().Msg("\nheyoooo\n")
 	torrent.connHandler.run()
 
 	torrent.String()
@@ -289,33 +284,39 @@ func (torrent *Torrent) torrentBlockHandler() {
 	}
 }
 
-func (torrent *Torrent) announceHandler(tracker *Tracker, wg *sync.WaitGroup) {
-	defer wg.Done()
+func (torrent *Torrent) announceHandler(tracker *Tracker) {
+	for {
+		log.Info().Msg(fmt.Sprintf("Announcing to tracker %s", tracker.link.String()))
 
-	log.Info().Msg(fmt.Sprintf("Announcing to tracker %s", tracker.link.String()))
+		err := tracker.connect()
+		if err != nil {
+			return
+		}
 
-	err := tracker.connect()
-	if err != nil {
-		return
+		defer tracker.disconnect()
+
+		// obtain a connection id
+		err = tracker.setConnectionID()
+		if err != nil {
+			log.Error().Msg(fmt.Sprintf("Error setting connection ID for tracker %s: %s", tracker.link.String(), err.Error()))
+			return
+		}
+
+		// send announce request
+		interval, err := tracker.announce(torrent)
+		if err != nil {
+			log.Error().Msg(fmt.Sprintf("Error announcing to tracker %s: %s", tracker.link.String(), err.Error()))
+			return
+		}
+
+		// wait to send another announce request for interval seconds
+		if interval == 0 {
+			log.Error().Msg(fmt.Sprintf("%s: got zero for interval...", tracker.link.String()))
+			return
+		}
+		log.Info().Msg(fmt.Sprintf("Sleeping for %d seconds", interval))
+		time.Sleep(time.Duration(interval) * time.Second)
 	}
-
-	defer tracker.disconnect()
-
-	// obtain a connection id
-	err = tracker.setConnectionID()
-	if err != nil {
-		log.Error().Msg(fmt.Sprintf("Error setting connection ID for tracker %s: %s", tracker.link.String(), err.Error()))
-		return
-	}
-
-	// send announce request
-	_, err = tracker.announce(torrent)
-	if err != nil {
-		log.Error().Msg(fmt.Sprintf("Error announcing to tracker %s: %s", tracker.link.String(), err.Error()))
-		return
-	}
-
-	return
 }
 
 func (torrent *Torrent) metadataPieceHandler() {
