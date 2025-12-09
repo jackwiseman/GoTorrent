@@ -139,7 +139,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		return m, tick()
-
 	}
 
 	return m, nil
@@ -154,6 +153,7 @@ func (m model) View() string {
 		good, bad, unknown := m.torrent.GetPeerStats()
 		s += fmt.Sprintf(" - %d good\n - %d bad\n - %d unknown\n", good, bad, unknown)
 	}
+	s += fmt.Sprintf("Progress: %s\n", m.torrent.GetPiecesDownloaded())
 	s += "\nPress q to quit.\n"
 
 	return s
