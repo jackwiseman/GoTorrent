@@ -124,6 +124,8 @@ func NewTorrentFromFile(file *TorrentFile, config *Config) *Torrent {
 
 	torrent.createPiecesSlice()
 
+	log.Info().Msgf("Pices created: %d", len(torrent.pieces))
+
 	torrent.connHandler = newConnHandler(&torrent)
 
 	torrent.torrentBlockCH = make(chan TorrentBlock)
@@ -202,9 +204,10 @@ func (torrent *Torrent) parseMetadataFile() error {
 
 func (torrent *Torrent) createPiecesSlice() {
 	torrent.pieces = make([]Piece, int(math.Ceil(float64(torrent.metadata.Length)/float64(torrent.metadata.PieceLen))))
-	for i := 0; i < len(torrent.pieces); i++ {
-		torrent.pieces[i].blocks = make([]Block, torrent.getNumBlocksInPiece())
-		torrent.pieces[i].hash = []byte(torrent.metadata.Pieces[20*i : 20*i+20])
+	for i := range torrent.pieces {
+		piece := &torrent.pieces[i]
+		piece.blocks = make([]Block, torrent.getNumBlocksInPiece())
+		piece.hash = []byte(torrent.metadata.Pieces[20*i : 20*i+20])
 	}
 	torrent.pieces[len(torrent.pieces)-1].blocks = make([]Block, int(math.Ceil(float64(torrent.metadata.Length-(torrent.metadata.PieceLen*(len(torrent.pieces)-1)))/float64(BlockLen))))
 
@@ -270,6 +273,7 @@ func (torrent *Torrent) torrentBlockHandler() {
 				torrent.numBlocksDownloaded -= len(torrent.pieces[ch.pieceIndex].blocks)
 				torrent.pieceQueue.push(ch.pieceIndex)
 			} else {
+				log.Info().Msg(fmt.Sprintf("Piece %d verified", ch.pieceIndex))
 				torrent.pieces[ch.pieceIndex].isVerified = true
 				torrent.numPiecesDownloaded++
 			}
@@ -480,6 +484,10 @@ func (torrent *Torrent) GetTrackers() []string {
 		trackers[i] = tracker.link.String()
 	}
 	return trackers
+}
+
+func (torrent *Torrent) GetPiecesDownloaded() string {
+	return fmt.Sprintf("%d / %d", torrent.numPiecesDownloaded, len(torrent.pieces))
 }
 
 func (torrent *Torrent) GetName() string {
