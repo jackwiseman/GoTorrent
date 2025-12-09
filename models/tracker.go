@@ -196,9 +196,8 @@ func (tracker *Tracker) announce(torrent *Torrent) (int, error) {
 		log.Info().Msg(fmt.Sprintf("We got %d seeders from this tracker", int(ar.Seeders)))
 
 		for _, peer := range ar.Peers {
-			torrent.peersMx.Lock()
-			torrent.peers = append(torrent.peers, newPeer(peer.IP.String(), fmt.Sprintf("%d", peer.Port), torrent))
-			torrent.peersMx.Unlock()
+			torrent.addPeer(peer.IP.String(), fmt.Sprintf("%d", peer.Port))
+			// torrent.peers = append(torrent.peers, newPeer(peer.IP.String(), fmt.Sprintf("%d", peer.Port), torrent))
 		}
 
 		return int(ar.Interval), nil

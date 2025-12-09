@@ -48,7 +48,6 @@ type Torrent struct {
 	downloadedMx sync.Mutex
 
 	connHandler *ConnectionHandler
-	progressBar Bar
 
 	torrentBlockCH  chan TorrentBlock
 	metadataPieceCH chan MetadataPiece
@@ -212,9 +211,6 @@ func (torrent *Torrent) createPiecesSlice() {
 	torrent.obtainedBlocks = make([]byte, (len(torrent.pieces)-1)*torrent.getNumBlocksInPiece()+len(torrent.pieces[len(torrent.pieces)-1].blocks))
 
 	torrent.pieceQueue = newPieceQueue(len(torrent.pieces), true)
-
-	// TODO: this is a hack to ensure that the progress bar is initialized correctly and needs to be placed somewhere else
-	torrent.progressBar.newOption(0, int64(len(torrent.pieces)))
 }
 
 // "main" function of a torrent
@@ -278,9 +274,6 @@ func (torrent *Torrent) torrentBlockHandler() {
 				torrent.numPiecesDownloaded++
 			}
 		}
-
-		// Update progress bar
-		torrent.progressBar.play(int64(torrent.numPiecesDownloaded))
 	}
 }
 
@@ -411,7 +404,6 @@ func (torrent *Torrent) hasAllData() bool {
 }
 
 func (torrent *Torrent) buildFile() {
-	torrent.progressBar.finish()
 	if len(torrent.metadata.Files) > 1 {
 		// Create new directory
 		path := "downloads/" + torrent.name + "/"
@@ -490,6 +482,35 @@ func (torrent *Torrent) GetTrackers() []string {
 	return trackers
 }
 
+func (torrent *Torrent) GetName() string {
+	// TODO: will have to change when multi-file torrents are supported
+	return torrent.metadata.Name
+}
+
+func (torrent *Torrent) GetNumPeers() int {
+	torrent.peersMx.Lock()
+	numPeers := len(torrent.peers)
+	torrent.peersMx.Unlock()
+	return numPeers
+}
+
+func (torrent *Torrent) GetPeerStats() (good, bad, unknown int) {
+	torrent.peersMx.Lock()
+	defer torrent.peersMx.Unlock()
+
+	for _, peer := range torrent.peers {
+		switch peer.status {
+		case Alive: // status = 2
+			good++
+		case Bad: // status = -1
+			bad++
+		default: // Unknown (0) or Dead (1)
+			unknown++
+		}
+	}
+	return
+}
+
 // return the number of pieces in the metadata
 func (torrent *Torrent) numMetadataPieces() int {
 	return int(math.Ceil(float64(torrent.metadataSize) / float64(BlockLen)))
@@ -512,4 +533,37 @@ func (torrent *Torrent) hasAllMetadata() (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+func (torrent *Torrent) GetFileSizePretty() string {
+	size := float64(torrent.metadata.Length)
+	unit := "B"
+
+	if size >= 1024 {
+		size /= 1024
+		unit = "KB"
+	}
+	if size >= 1024 {
+		size /= 1024
+		unit = "MB"
+	}
+	if size >= 1024 {
+		size /= 1024
+		unit = "GB"
+	}
+	return fmt.Sprintf("%.2f %s", size, unit)
+}
+
+// add a peer if it does not already exist
+func (torrent *Torrent) addPeer(ip string, port string) {
+	torrent.peersMx.Lock()
+	defer torrent.peersMx.Unlock()
+
+	for _, peer := range torrent.peers {
+		if peer.ip == ip && peer.port == port {
+			log.Info().Msg(fmt.Sprintf("Peer %s:%s already exists, not adding", ip, port))
+			return
+		}
+	}
+	torrent.peers = append(torrent.peers, newPeer(ip, port, torrent))
 }
