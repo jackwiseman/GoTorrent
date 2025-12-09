@@ -1,7 +1,6 @@
 package models
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -68,7 +67,7 @@ func (ch *ConnectionHandler) run() {
 				go ch.activeConns[len(ch.activeConns)-1].run(ch.doneChan)
 			}
 		}
-		log.Info().Msg(fmt.Sprintf("Bad: %d Alive: %d Total: %d\n", badPeers, alivePeers, len(ch.torrent.peers)))
+		// log.Info().Msg(fmt.Sprintf("Bad: %d Alive: %d Total: %d\n", badPeers, alivePeers, len(ch.torrent.peers)))
 		ch.removeConnection(<-ch.doneChan) // block until someone disconnects
 	}
 }
