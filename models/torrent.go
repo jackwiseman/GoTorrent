@@ -486,8 +486,19 @@ func (torrent *Torrent) GetTrackers() []string {
 	return trackers
 }
 
-func (torrent *Torrent) GetPiecesDownloaded() string {
-	return fmt.Sprintf("%d / %d", torrent.numPiecesDownloaded, len(torrent.pieces))
+func (torrent *Torrent) GetPiecesDownloaded() int {
+	return torrent.numPiecesDownloaded
+}
+
+func (torrent *Torrent) GetNumPieces() int {
+	return len(torrent.pieces)
+}
+
+func (torrent *Torrent) GetProgressPercentage() float64 {
+	if len(torrent.pieces) == 0 {
+		return 0.0
+	}
+	return float64(torrent.numPiecesDownloaded) / float64(len(torrent.pieces)) * 100
 }
 
 func (torrent *Torrent) GetName() string {
@@ -502,7 +513,7 @@ func (torrent *Torrent) GetNumPeers() int {
 	return numPeers
 }
 
-func (torrent *Torrent) GetPeerStats() (good, bad, unknown int) {
+func (torrent *Torrent) GetPeerStats() (good, bad, connecting, unknown int) {
 	torrent.peersMx.Lock()
 	defer torrent.peersMx.Unlock()
 
@@ -512,10 +523,13 @@ func (torrent *Torrent) GetPeerStats() (good, bad, unknown int) {
 			good++
 		case Bad: // status = -1
 			bad++
+		case Connecting:
+			connecting++
 		default: // Unknown (0) or Dead (1)
 			unknown++
 		}
 	}
+
 	return
 }
 
