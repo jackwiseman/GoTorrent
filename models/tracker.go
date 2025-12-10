@@ -8,7 +8,6 @@ import (
 	"math"
 	"net"
 	"net/url"
-	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -27,34 +26,6 @@ type Tracker struct {
 func NewTracker(link url.URL) *Tracker {
 	// TODO: validate udp/tcp
 	return &Tracker{link: link, timeout: 15 * time.Second, retries: 1}
-}
-
-// send 2x announce requests to all trackers, the first to find out how many peers they have,
-// the second to request that many, so that we have a large pool to pull from
-func (tracker *Tracker) FindPeers(torrent *Torrent, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	err := tracker.connect()
-
-	if err != nil {
-		return
-	}
-
-	err = tracker.setConnectionID()
-	if err != nil {
-		return
-	}
-
-	numSeeders, err := tracker.announce(torrent)
-	if err != nil {
-		return
-	}
-	log.Info().Msg(fmt.Sprintf("tracker %s has %d seeders", tracker.link.String(), numSeeders))
-
-	err = tracker.disconnect()
-	if err != nil {
-		panic(err)
-	}
 }
 
 // for now, only works for udp links, which seem to be standard
@@ -225,12 +196,11 @@ func (tracker *Tracker) announce(torrent *Torrent) (int, error) {
 		log.Info().Msg(fmt.Sprintf("We got %d seeders from this tracker", int(ar.Seeders)))
 
 		for _, peer := range ar.Peers {
-			torrent.peersMx.Lock()
-			torrent.peers = append(torrent.peers, newPeer(peer.IP.String(), fmt.Sprintf("%d", peer.Port), torrent))
-			torrent.peersMx.Unlock()
+			torrent.addPeer(peer.IP.String(), fmt.Sprintf("%d", peer.Port))
+			// torrent.peers = append(torrent.peers, newPeer(peer.IP.String(), fmt.Sprintf("%d", peer.Port), torrent))
 		}
 
-		return int(ar.Seeders), nil
+		return int(ar.Interval), nil
 		// seeders := int(binary.BigEndian.Uint32(buf[16:]))
 		// for j := 0; j < int(math.Min(float64(numWant), float64(seeders))); j++ {
 		// 	ipAddressRaw := binary.BigEndian.Uint32(buf[20+(6*j):])

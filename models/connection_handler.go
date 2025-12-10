@@ -1,7 +1,7 @@
 package models
 
 import (
-	"fmt"
+	"time"
 
 	"github.com/rs/zerolog/log"
 )
@@ -22,43 +22,43 @@ func newConnHandler(torrent *Torrent) *ConnectionHandler {
 	var ch ConnectionHandler
 	ch.torrent = torrent
 	ch.doneChan = make(chan *Peer)
-	// ch.logger = log.New(torrent.logFile, "[Connection Handler] ", log.Ltime|log.Lshortfile)
-	//	ch.logger.SetOutput(io.Discard)
 	return &ch
 }
 
 func (ch *ConnectionHandler) run() {
 	defer log.Info().Msg("Finished running")
-	//	defer ch.logger.Println("Finished running")
 
 	for {
-		badPeers := 0
-		alivePeers := 0
-		// attempt to fill up missing connections to reach max_peers
-		for i := 0; i < len(ch.torrent.peers); i++ {
+		ch.torrent.peersMx.Lock()
+		peers := ch.torrent.peers
+		ch.torrent.peersMx.Unlock()
+
+		// try check peer list again in 5 seconds if there are none yet
+		if len(peers) == 0 {
+			time.Sleep(5)
+			continue
+		}
+
+		var badPeers int
+
+		// add peers until we reach max connections
+		for _, peer := range peers {
 			if len(ch.activeConns) >= ch.torrent.maxPeers {
 				break
 			}
-			switch ch.torrent.peers[i].status {
+			switch peer.status {
 			case Bad:
 				badPeers++
-				if i == len(ch.torrent.peers)-1 && badPeers == len(ch.torrent.peers) {
-					// all peers are bad
+				if badPeers == len(peers) {
 					return
 				}
-			case Alive:
-				alivePeers++
+			case Alive, Connecting:
 				continue
 			default:
-				ch.activeConns = append(ch.activeConns, ch.torrent.peers[i])
-				ch.torrent.peers[i].status = Alive
-				//				ch.logger.Printf(" + %s", ch.torrent.peers[i].String())
+				ch.activeConns = append(ch.activeConns, peer)
 				go ch.activeConns[len(ch.activeConns)-1].run(ch.doneChan)
 			}
 		}
-		log.Info().Msg(fmt.Sprintf("Bad: %d Alive: %d Total: %d\n", badPeers, alivePeers, len(ch.torrent.peers)))
-		//		ch.logger.Printf("Bad: %d Alive: %d Total: %d\n", badPeers, alivePeers, len(ch.torrent.peers))
-		//		ch.logger.Println("------------------------")
 		ch.removeConnection(<-ch.doneChan) // block until someone disconnects
 	}
 }

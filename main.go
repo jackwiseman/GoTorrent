@@ -5,10 +5,14 @@ import (
 	"fmt"
 	"gotorrent/models"
 	"os"
+	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/rs/zerolog/pkgerrors"
+
+	"github.com/charmbracelet/bubbles/progress"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // var seed bool
@@ -18,17 +22,29 @@ var file string
 var magnet string
 var download bool
 
+type tickMsg time.Time
+
 func init() {
 	// flag.BoolVar(&seed, "seed", false, "continue seeding after download")
 	flag.BoolVar(&download, "download", false, "enable downloading")
 	flag.StringVar(&file, "file", "", "path to the .torrent file")
 	flag.StringVar(&magnet, "magnet", "", "magnet link to download")
-	flag.IntVar(&connections, "connections", 50, "number of connections to use")
+	flag.IntVar(&connections, "connections", 100, "number of connections to use")
 	flag.BoolVar(&debug, "debug", false, "enable debug logging")
 	flag.Parse()
 }
 
 func main() {
+	// Open log file (creates new or truncates existing)
+	logFile, err := os.Create("gotorrent.log")
+	if err != nil {
+		panic(err)
+	}
+	defer logFile.Close()
+
+	// Configure zerolog to write to the file
+	log.Logger = log.Output(logFile)
+
 	zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	if debug {
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
@@ -83,8 +99,69 @@ func main() {
 		return
 	}
 
-	if download {
-		torr.StartDownload()
+	prog := progress.New(progress.WithDefaultGradient())
+	p := tea.NewProgram(model{torrent: torr, progress: prog}, tea.WithAltScreen())
 
+	if download {
+		go torr.StartDownload()
 	}
+
+	_, err = p.Run()
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to start TUI")
+	}
+
+	// if download {
+	// 	torr.StartDownload()
+	// }
+}
+
+type model struct {
+	torrent  *models.Torrent
+	progress progress.Model
+}
+
+func (m model) Init() tea.Cmd {
+	return tick()
+}
+
+func tick() tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return tickMsg(t)
+	})
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "q", "ctrl+c":
+			return m, tea.Quit
+		}
+
+	case tickMsg:
+		return m, tick()
+	}
+
+	return m, nil
+}
+
+func (m model) View() string {
+	s := "Gotorrent\n\n"
+	s += fmt.Sprintf("Name: %s\n", m.torrent.GetName())
+	s += fmt.Sprintf("Size: %s\n", m.torrent.GetFileSizePretty())
+	s += fmt.Sprintf("Total Peers: %d\n", m.torrent.GetNumPeers())
+	if m.torrent.GetNumPeers() > 0 {
+		good, bad, connecting, unknown := m.torrent.GetPeerStats()
+		s += fmt.Sprintf(" - %d good\n - %d bad\n - %d connecting\n - %d unknown\n", good, bad, connecting, unknown)
+	}
+
+	if m.torrent.GetPiecesDownloaded() > 0 {
+		s += fmt.Sprintf("\nProgress: %d / %d (%.1f%%)\n", m.torrent.GetPiecesDownloaded(), m.torrent.GetNumPieces(), m.torrent.GetProgressPercentage())
+		s += m.progress.ViewAs(m.torrent.GetProgressPercentage() / 100.0)
+	}
+	s += "\n\nPress q to quit.\n"
+
+	return s
 }

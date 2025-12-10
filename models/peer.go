@@ -15,10 +15,11 @@ import (
 
 // Identifiers for peer status to denote whether we should attempt to connect to them again or not
 const (
-	Bad     = -1 // could not connect at all
-	Unknown = 0  // have not attempted connected yet
-	Dead    = 1  // lost connection some time after handshake + bitfield -- ie we can try to connect to them again
-	Alive   = 2  // currently connected
+	Bad        = -1 // could not connect at all
+	Unknown    = 0  // have not attempted connected yet
+	Dead       = 1  // lost connection some time after handshake + bitfield -- ie we can try to connect to them again
+	Alive      = 2  // currently connected
+	Connecting = 3  // attempting to connect right now, unverified
 )
 
 // Peer is a connection that we read/write to to download files from, discovered through the Tracker
@@ -70,7 +71,7 @@ func (peer *Peer) run(doneCh chan *Peer) {
 	defer func() { doneCh <- peer }()
 
 	// if we are reconnecting to this peer we need to reset some variables
-	peer.status = Alive
+	peer.status = Connecting
 	peer.choked = true
 	peer.requests = 0
 
@@ -79,6 +80,9 @@ func (peer *Peer) run(doneCh chan *Peer) {
 		peer.status = Bad
 		return
 	}
+
+	// if we're able to make at least one connection, set status to alive
+	peer.status = Alive
 
 	err = peer.performHandshake()
 	if err != nil {

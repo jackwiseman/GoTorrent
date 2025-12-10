@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"net/url"
+	"time"
 
 	"gotorrent/utils"
 	"math"
@@ -47,7 +48,6 @@ type Torrent struct {
 	downloadedMx sync.Mutex
 
 	connHandler *ConnectionHandler
-	progressBar Bar
 
 	torrentBlockCH  chan TorrentBlock
 	metadataPieceCH chan MetadataPiece
@@ -114,8 +114,17 @@ func NewTorrentFromFile(file *TorrentFile, config *Config) *Torrent {
 
 	torrent.metadata = metadata
 
-	torrent.verifyMetadata()
-	torrent.hasAllMetadata()
+	err := torrent.verifyMetadata()
+	if err != nil {
+		log.Error().Msg("metadata was not verified, exiting")
+		panic(err)
+	}
+	// torrent.hasAllMetadata()
+	torrent.hasMetadata = true
+
+	torrent.createPiecesSlice()
+
+	log.Info().Msgf("Pices created: %d", len(torrent.pieces))
 
 	torrent.connHandler = newConnHandler(&torrent)
 
@@ -146,23 +155,6 @@ func (torrent *Torrent) String() {
 		fmt.Println("-------------")
 		fmt.Println(torrent.metadata.String())
 	}
-}
-
-// send 2x announce requests to all trackers, the first to find out how many peers they have,
-// the second to request that many, so that we have a large pool to pull from
-func (torrent *Torrent) findPeers() {
-	var wg sync.WaitGroup
-
-	log.Info().Msg(fmt.Sprintf("Contacting %d trackers...", len(torrent.trackers)))
-
-	for _, tracker := range torrent.trackers {
-		wg.Add(1)
-		go tracker.FindPeers(torrent, &wg)
-	}
-	wg.Wait()
-
-	torrent.removeDuplicatePeers()
-	fmt.Printf("%d peers in swarm\n", len(torrent.peers))
 }
 
 // remove all instances of repeating peer ip addresses from torrent.peers
@@ -204,37 +196,39 @@ func (torrent *Torrent) parseMetadataFile() error {
 	torrent.name = torrent.metadata.Name
 
 	// create empty pieces slice
+	// TODO: migrate
+	torrent.createPiecesSlice()
+
+	return nil
+}
+
+func (torrent *Torrent) createPiecesSlice() {
 	torrent.pieces = make([]Piece, int(math.Ceil(float64(torrent.metadata.Length)/float64(torrent.metadata.PieceLen))))
-	for i := 0; i < len(torrent.pieces); i++ {
-		torrent.pieces[i].blocks = make([]Block, torrent.getNumBlocksInPiece())
-		torrent.pieces[i].hash = []byte(torrent.metadata.Pieces[20*i : 20*i+20])
+	for i := range torrent.pieces {
+		piece := &torrent.pieces[i]
+		piece.blocks = make([]Block, torrent.getNumBlocksInPiece())
+		piece.hash = []byte(torrent.metadata.Pieces[20*i : 20*i+20])
 	}
 	torrent.pieces[len(torrent.pieces)-1].blocks = make([]Block, int(math.Ceil(float64(torrent.metadata.Length-(torrent.metadata.PieceLen*(len(torrent.pieces)-1)))/float64(BlockLen))))
 
 	torrent.obtainedBlocks = make([]byte, (len(torrent.pieces)-1)*torrent.getNumBlocksInPiece()+len(torrent.pieces[len(torrent.pieces)-1].blocks))
 
 	torrent.pieceQueue = newPieceQueue(len(torrent.pieces), true)
-
-	torrent.progressBar.newOption(0, int64(len(torrent.pieces)))
-
-	return nil
 }
 
 // "main" function of a torrent
 func (torrent *Torrent) StartDownload() {
 	// start announce process
-	var wg sync.WaitGroup
 	for i := range torrent.trackers {
-		wg.Add(1)
-		go torrent.announceHandler(torrent.trackers[i], &wg)
+		go torrent.announceHandler(torrent.trackers[i])
 	}
-	wg.Wait()
 
 	// prepare listeners
 	go torrent.metadataPieceHandler()
 	go torrent.torrentBlockHandler()
 
 	// eventually this will be backgrounded but ok to just connect for now
+	log.Info().Msg("\nheyoooo\n")
 	torrent.connHandler.run()
 
 	torrent.String()
@@ -279,43 +273,47 @@ func (torrent *Torrent) torrentBlockHandler() {
 				torrent.numBlocksDownloaded -= len(torrent.pieces[ch.pieceIndex].blocks)
 				torrent.pieceQueue.push(ch.pieceIndex)
 			} else {
+				log.Info().Msg(fmt.Sprintf("Piece %d verified", ch.pieceIndex))
 				torrent.pieces[ch.pieceIndex].isVerified = true
 				torrent.numPiecesDownloaded++
 			}
 		}
-
-		// Update progress bar
-		torrent.progressBar.play(int64(torrent.numPiecesDownloaded))
 	}
 }
 
-func (torrent *Torrent) announceHandler(tracker *Tracker, wg *sync.WaitGroup) {
-	defer wg.Done()
+func (torrent *Torrent) announceHandler(tracker *Tracker) {
+	for {
+		log.Info().Msg(fmt.Sprintf("Announcing to tracker %s", tracker.link.String()))
 
-	log.Info().Msg(fmt.Sprintf("Announcing to tracker %s", tracker.link.String()))
+		err := tracker.connect()
+		if err != nil {
+			return
+		}
 
-	err := tracker.connect()
-	if err != nil {
-		return
+		defer tracker.disconnect()
+
+		// obtain a connection id
+		err = tracker.setConnectionID()
+		if err != nil {
+			log.Error().Msg(fmt.Sprintf("Error setting connection ID for tracker %s: %s", tracker.link.String(), err.Error()))
+			return
+		}
+
+		// send announce request
+		interval, err := tracker.announce(torrent)
+		if err != nil {
+			log.Error().Msg(fmt.Sprintf("Error announcing to tracker %s: %s", tracker.link.String(), err.Error()))
+			return
+		}
+
+		// wait to send another announce request for interval seconds
+		if interval == 0 {
+			log.Error().Msg(fmt.Sprintf("%s: got zero for interval...", tracker.link.String()))
+			return
+		}
+		log.Info().Msg(fmt.Sprintf("Sleeping for %d seconds", interval))
+		time.Sleep(time.Duration(interval) * time.Second)
 	}
-
-	defer tracker.disconnect()
-
-	// obtain a connection id
-	err = tracker.setConnectionID()
-	if err != nil {
-		log.Error().Msg(fmt.Sprintf("Error setting connection ID for tracker %s: %s", tracker.link.String(), err.Error()))
-		return
-	}
-
-	// send announce request
-	_, err = tracker.announce(torrent)
-	if err != nil {
-		log.Error().Msg(fmt.Sprintf("Error announcing to tracker %s: %s", tracker.link.String(), err.Error()))
-		return
-	}
-
-	return
 }
 
 func (torrent *Torrent) metadataPieceHandler() {
@@ -410,7 +408,6 @@ func (torrent *Torrent) hasAllData() bool {
 }
 
 func (torrent *Torrent) buildFile() {
-	torrent.progressBar.finish()
 	if len(torrent.metadata.Files) > 1 {
 		// Create new directory
 		path := "downloads/" + torrent.name + "/"
@@ -489,6 +486,53 @@ func (torrent *Torrent) GetTrackers() []string {
 	return trackers
 }
 
+func (torrent *Torrent) GetPiecesDownloaded() int {
+	return torrent.numPiecesDownloaded
+}
+
+func (torrent *Torrent) GetNumPieces() int {
+	return len(torrent.pieces)
+}
+
+func (torrent *Torrent) GetProgressPercentage() float64 {
+	if len(torrent.pieces) == 0 {
+		return 0.0
+	}
+	return float64(torrent.numPiecesDownloaded) / float64(len(torrent.pieces)) * 100
+}
+
+func (torrent *Torrent) GetName() string {
+	// TODO: will have to change when multi-file torrents are supported
+	return torrent.metadata.Name
+}
+
+func (torrent *Torrent) GetNumPeers() int {
+	torrent.peersMx.Lock()
+	numPeers := len(torrent.peers)
+	torrent.peersMx.Unlock()
+	return numPeers
+}
+
+func (torrent *Torrent) GetPeerStats() (good, bad, connecting, unknown int) {
+	torrent.peersMx.Lock()
+	defer torrent.peersMx.Unlock()
+
+	for _, peer := range torrent.peers {
+		switch peer.status {
+		case Alive: // status = 2
+			good++
+		case Bad: // status = -1
+			bad++
+		case Connecting:
+			connecting++
+		default: // Unknown (0) or Dead (1)
+			unknown++
+		}
+	}
+
+	return
+}
+
 // return the number of pieces in the metadata
 func (torrent *Torrent) numMetadataPieces() int {
 	return int(math.Ceil(float64(torrent.metadataSize) / float64(BlockLen)))
@@ -511,4 +555,37 @@ func (torrent *Torrent) hasAllMetadata() (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+func (torrent *Torrent) GetFileSizePretty() string {
+	size := float64(torrent.metadata.Length)
+	unit := "B"
+
+	if size >= 1024 {
+		size /= 1024
+		unit = "KB"
+	}
+	if size >= 1024 {
+		size /= 1024
+		unit = "MB"
+	}
+	if size >= 1024 {
+		size /= 1024
+		unit = "GB"
+	}
+	return fmt.Sprintf("%.2f %s", size, unit)
+}
+
+// add a peer if it does not already exist
+func (torrent *Torrent) addPeer(ip string, port string) {
+	torrent.peersMx.Lock()
+	defer torrent.peersMx.Unlock()
+
+	for _, peer := range torrent.peers {
+		if peer.ip == ip && peer.port == port {
+			log.Info().Msg(fmt.Sprintf("Peer %s:%s already exists, not adding", ip, port))
+			return
+		}
+	}
+	torrent.peers = append(torrent.peers, newPeer(ip, port, torrent))
 }
