@@ -11,6 +11,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/rs/zerolog/pkgerrors"
 
+	"github.com/charmbracelet/bubbles/progress"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -28,7 +29,7 @@ func init() {
 	flag.BoolVar(&download, "download", false, "enable downloading")
 	flag.StringVar(&file, "file", "", "path to the .torrent file")
 	flag.StringVar(&magnet, "magnet", "", "magnet link to download")
-	flag.IntVar(&connections, "connections", 50, "number of connections to use")
+	flag.IntVar(&connections, "connections", 100, "number of connections to use")
 	flag.BoolVar(&debug, "debug", false, "enable debug logging")
 	flag.Parse()
 }
@@ -98,7 +99,8 @@ func main() {
 		return
 	}
 
-	p := tea.NewProgram(model{torrent: torr}, tea.WithAltScreen())
+	prog := progress.New(progress.WithDefaultGradient())
+	p := tea.NewProgram(model{torrent: torr, progress: prog}, tea.WithAltScreen())
 
 	if download {
 		go torr.StartDownload()
@@ -115,7 +117,8 @@ func main() {
 }
 
 type model struct {
-	torrent *models.Torrent
+	torrent  *models.Torrent
+	progress progress.Model
 }
 
 func (m model) Init() tea.Cmd {
@@ -150,11 +153,15 @@ func (m model) View() string {
 	s += fmt.Sprintf("Size: %s\n", m.torrent.GetFileSizePretty())
 	s += fmt.Sprintf("Total Peers: %d\n", m.torrent.GetNumPeers())
 	if m.torrent.GetNumPeers() > 0 {
-		good, bad, unknown := m.torrent.GetPeerStats()
-		s += fmt.Sprintf(" - %d good\n - %d bad\n - %d unknown\n", good, bad, unknown)
+		good, bad, connecting, unknown := m.torrent.GetPeerStats()
+		s += fmt.Sprintf(" - %d good\n - %d bad\n - %d connecting\n - %d unknown\n", good, bad, connecting, unknown)
 	}
-	s += fmt.Sprintf("Progress: %s\n", m.torrent.GetPiecesDownloaded())
-	s += "\nPress q to quit.\n"
+
+	if m.torrent.GetPiecesDownloaded() > 0 {
+		s += fmt.Sprintf("\nProgress: %d / %d (%.1f%%)\n", m.torrent.GetPiecesDownloaded(), m.torrent.GetNumPieces(), m.torrent.GetProgressPercentage())
+		s += m.progress.ViewAs(m.torrent.GetProgressPercentage() / 100.0)
+	}
+	s += "\n\nPress q to quit.\n"
 
 	return s
 }

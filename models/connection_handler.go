@@ -22,21 +22,16 @@ func newConnHandler(torrent *Torrent) *ConnectionHandler {
 	var ch ConnectionHandler
 	ch.torrent = torrent
 	ch.doneChan = make(chan *Peer)
-	// ch.logger = log.New(torrent.logFile, "[Connection Handler] ", log.Ltime|log.Lshortfile)
-	//	ch.logger.SetOutput(io.Discard)
 	return &ch
 }
 
 func (ch *ConnectionHandler) run() {
 	defer log.Info().Msg("Finished running")
-	//	defer ch.logger.Println("Finished running")
 
 	for {
 		ch.torrent.peersMx.Lock()
 		peers := ch.torrent.peers
 		ch.torrent.peersMx.Unlock()
-
-		var badPeers int
 
 		// try check peer list again in 5 seconds if there are none yet
 		if len(peers) == 0 {
@@ -44,10 +39,10 @@ func (ch *ConnectionHandler) run() {
 			continue
 		}
 
-		// add peers until we reach max connections
+		var badPeers int
 
+		// add peers until we reach max connections
 		for _, peer := range peers {
-			// we've reached max active connections
 			if len(ch.activeConns) >= ch.torrent.maxPeers {
 				break
 			}
@@ -57,10 +52,6 @@ func (ch *ConnectionHandler) run() {
 				if badPeers == len(peers) {
 					return
 				}
-				// if i == len(peers)-1 && badPeers == len(peers) {
-				// 	// all peers are bad
-				// 	return
-				// }
 			case Alive, Connecting:
 				continue
 			default:
@@ -68,7 +59,6 @@ func (ch *ConnectionHandler) run() {
 				go ch.activeConns[len(ch.activeConns)-1].run(ch.doneChan)
 			}
 		}
-		// log.Info().Msg(fmt.Sprintf("Bad: %d Alive: %d Total: %d\n", badPeers, alivePeers, len(ch.torrent.peers)))
 		ch.removeConnection(<-ch.doneChan) // block until someone disconnects
 	}
 }
